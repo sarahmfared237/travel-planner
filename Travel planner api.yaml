@@ -1,0 +1,564 @@
+openapi: 3.0.3
+info:
+  title: Travel Destination Planner API
+  description: |
+    REST API for the Travel Destination Planner application.
+    
+    ## Authentication
+    This API uses JWT Bearer token authentication.
+    1. Register or Login to get a token
+    2. Click **Authorize** and enter: `Bearer <your_token>`
+    3. All protected endpoints will use it automatically
+    
+    ## Roles
+    - **ROLE_USER** — can view and search approved destinations, manage wishlist
+    - **ROLE_ADMIN** — full access including fetch, add, approve, delete destinations
+  version: 1.0.0
+  contact:
+    name: Sarah
+    email: sarahfared395@gmail.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://your-app.railway.app
+    description: Production server (Railway)
+
+tags:
+  - name: Auth
+    description: Register and login endpoints — public access
+  - name: Admin
+    description: Admin dashboard — requires ROLE_ADMIN
+  - name: User
+    description: User dashboard — requires ROLE_USER or ROLE_ADMIN
+
+security:
+  - BearerAuth: []
+
+paths:
+
+  # ─── AUTH ───────────────────────────────────────────────
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: Creates a new account with ROLE_USER by default. Returns a JWT token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              username: sarah
+              email: sarah@test.com
+              password: password123
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiJ9...
+                role: ROLE_USER
+                username: sarah
+        '400':
+          description: Validation error or username/email already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Username already taken
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: Authenticate with username and password. Returns a JWT token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+            example:
+              username: sarah
+              password: password123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiJ9...
+                role: ROLE_USER
+                username: sarah
+        '401':
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Bad credentials
+
+  # ─── ADMIN ──────────────────────────────────────────────
+
+  /api/admin/destinations:
+    get:
+      tags: [Admin]
+      summary: Get all destinations
+      description: Returns all destinations including pending (not yet approved). Admin only.
+      responses:
+        '200':
+          description: List of all destinations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Admin]
+      summary: Add a single destination
+      description: Manually add one destination to the database. Approved is set to false by default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DestinationRequest'
+            example:
+              name: Egypt
+              capital: Cairo
+              region: Africa
+              population: 104258327
+              currency: EGP
+              flagUrl: https://flagcdn.com/w320/eg.png
+              description: Land of the Pharaohs with ancient wonders.
+      responses:
+        '200':
+          description: Destination added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/destinations/bulk:
+    post:
+      tags: [Admin]
+      summary: Bulk add destinations
+      description: Add multiple destinations at once. Paste the array returned from the fetch endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/DestinationRequest'
+            example:
+              - name: France
+                capital: Paris
+                region: Europe
+                population: 67391582
+                currency: EUR
+                flagUrl: https://flagcdn.com/w320/fr.png
+                description: The city of lights and world-class cuisine.
+              - name: Japan
+                capital: Tokyo
+                region: Asia
+                population: 125681593
+                currency: JPY
+                flagUrl: https://flagcdn.com/w320/jp.png
+                description: A blend of ancient tradition and modern technology.
+      responses:
+        '200':
+          description: Destinations added successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/destinations/{id}/approve:
+    put:
+      tags: [Admin]
+      summary: Approve a destination
+      description: Sets approved to true so the destination becomes visible to users.
+      parameters:
+        - $ref: '#/components/parameters/DestinationId'
+      responses:
+        '200':
+          description: Destination approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/destinations/{id}:
+    delete:
+      tags: [Admin]
+      summary: Delete a destination
+      description: Permanently removes a destination from the database.
+      parameters:
+        - $ref: '#/components/parameters/DestinationId'
+      responses:
+        '204':
+          description: Destination deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/fetch/{region}:
+    get:
+      tags: [Admin]
+      summary: Fetch destinations from external API
+      description: |
+        Fetches country data from the REST Countries API (https://restcountries.com) by region.
+        Returns a list of destination objects ready to be bulk-added to the database.
+        **Available regions:** africa, americas, asia, europe, oceania
+      parameters:
+        - name: region
+          in: path
+          required: true
+          description: World region to fetch countries from
+          schema:
+            type: string
+            enum: [africa, americas, asia, europe, oceania]
+          example: europe
+      responses:
+        '200':
+          description: List of destinations fetched from external API (not yet saved to DB)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ─── USER ───────────────────────────────────────────────
+
+  /api/user/destinations:
+    get:
+      tags: [User]
+      summary: Get approved destinations
+      description: Returns a paginated list of all approved destinations.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated list of approved destinations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedDestinations'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/user/destinations/search:
+    get:
+      tags: [User]
+      summary: Search destinations by name
+      description: Case-insensitive search through approved destinations by name keyword.
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          description: Search keyword to match against destination name
+          schema:
+            type: string
+          example: france
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedDestinations'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/user/destinations/{id}/want-to-visit:
+    post:
+      tags: [User]
+      summary: Toggle want to visit
+      description: |
+        Adds or removes a destination from the logged-in user's wishlist.
+        - If the destination is NOT in the wishlist → it gets added
+        - If the destination IS already in the wishlist → it gets removed
+        Returns the updated list of destination IDs in the wishlist.
+      parameters:
+        - $ref: '#/components/parameters/DestinationId'
+      responses:
+        '200':
+          description: Updated wishlist destination IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example:
+                - 64f1a2b3c4d5e6f7a8b9c0d1
+                - 64f1a2b3c4d5e6f7a8b9c0d2
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/user/wishlist:
+    get:
+      tags: [User]
+      summary: Get my wishlist
+      description: Returns the full destination objects for all destinations the logged-in user has marked as Want to Visit.
+      responses:
+        '200':
+          description: List of wishlist destinations with full details
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+# ─── COMPONENTS ─────────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter your JWT token. You can get it from the /api/auth/login endpoint.
+
+  parameters:
+    DestinationId:
+      name: id
+      in: path
+      required: true
+      description: MongoDB ObjectId of the destination
+      schema:
+        type: string
+      example: 64f1a2b3c4d5e6f7a8b9c0d1
+
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number (0-based)
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+      example: 0
+
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Number of items per page
+      schema:
+        type: integer
+        default: 10
+        minimum: 1
+        maximum: 100
+      example: 10
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Unauthorized - please login first
+
+    Forbidden:
+      description: Insufficient role permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Access denied - ROLE_ADMIN required
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Destination not found
+
+  schemas:
+
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          example: sarah
+        email:
+          type: string
+          format: email
+          example: sarah@test.com
+        password:
+          type: string
+          minLength: 6
+          example: password123
+
+    AuthRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: sarah
+        password:
+          type: string
+          example: password123
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token — use this in the Authorization header as Bearer <token>
+          example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzYXJhaCJ9...
+        role:
+          type: string
+          enum: [ROLE_USER, ROLE_ADMIN]
+          example: ROLE_USER
+        username:
+          type: string
+          example: sarah
+
+    Destination:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB generated ObjectId
+          example: 64f1a2b3c4d5e6f7a8b9c0d1
+        name:
+          type: string
+          example: France
+        capital:
+          type: string
+          example: Paris
+        region:
+          type: string
+          example: Europe
+        population:
+          type: integer
+          format: int64
+          example: 67391582
+        currency:
+          type: string
+          example: EUR
+        flagUrl:
+          type: string
+          format: uri
+          example: https://flagcdn.com/w320/fr.png
+        description:
+          type: string
+          example: The city of lights and world-class cuisine.
+        approved:
+          type: boolean
+          example: true
+
+    DestinationRequest:
+      type: object
+      required: [name, capital, region, population, currency]
+      properties:
+        name:
+          type: string
+          example: France
+        capital:
+          type: string
+          example: Paris
+        region:
+          type: string
+          example: Europe
+        population:
+          type: integer
+          format: int64
+          example: 67391582
+        currency:
+          type: string
+          example: EUR
+        flagUrl:
+          type: string
+          format: uri
+          example: https://flagcdn.com/w320/fr.png
+        description:
+          type: string
+          example: The city of lights and world-class cuisine.
+
+    PagedDestinations:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Destination'
+        totalElements:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 5
+        size:
+          type: integer
+          example: 10
+        number:
+          type: integer
+          description: Current page number (0-based)
+          example: 0
+        first:
+          type: boolean
+          example: true
+        last:
+          type: boolean
+          example: false
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: An error occurred
