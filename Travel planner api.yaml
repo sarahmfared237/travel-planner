@@ -3,47 +3,38 @@ info:
   title: Travel Destination Planner API
   description: |
     REST API for the Travel Destination Planner application.
-    
-    ## Authentication
-    This API uses JWT Bearer token authentication.
-    1. Register or Login to get a token
-    2. Click **Authorize** and enter: `Bearer <your_token>`
-    3. All protected endpoints will use it automatically
-    
+
     ## Roles
-    - **ROLE_USER** — can view and search approved destinations, manage wishlist
+    - **ROLE_USER** — view and search approved destinations, manage wishlist
     - **ROLE_ADMIN** — full access including fetch, add, approve, delete destinations
   version: 1.0.0
-  contact:
-    name: Sarah
-    email: sarahfared395@gmail.com
 
 servers:
   - url: http://localhost:8080
     description: Local development server
-  - url: https://your-app.railway.app
+  - url: https://travel-planner-production-71bc.up.railway.app
     description: Production server (Railway)
 
 tags:
   - name: Auth
-    description: Register and login endpoints — public access
+    description: Public endpoints — no token required
   - name: Admin
-    description: Admin dashboard — requires ROLE_ADMIN
+    description: Admin dashboard — requires ROLE_ADMIN token
   - name: User
-    description: User dashboard — requires ROLE_USER or ROLE_ADMIN
-
-security:
-  - BearerAuth: []
+    description: User dashboard — requires ROLE_USER or ROLE_ADMIN token
 
 paths:
 
-  # ─── AUTH ───────────────────────────────────────────────
+  # ─── AUTH (no security) ─────────────────────────────────
 
   /api/auth/register:
     post:
       tags: [Auth]
       summary: Register a new user
-      description: Creates a new account with ROLE_USER by default. Returns a JWT token.
+      description: |
+        Creates a new account. The first user ever registered automatically
+        becomes ROLE_ADMIN. All subsequent users get ROLE_USER.
+        No token required.
       security: []
       requestBody:
         required: true
@@ -54,10 +45,10 @@ paths:
             example:
               username: sarah
               email: sarah@test.com
-              password: password123
+              password: "********"
       responses:
         '200':
-          description: Registration successful
+          description: Registration successful — returns JWT token
           content:
             application/json:
               schema:
@@ -67,7 +58,7 @@ paths:
                 role: ROLE_USER
                 username: sarah
         '400':
-          description: Validation error or username/email already taken
+          description: Username or email already taken
           content:
             application/json:
               schema:
@@ -79,7 +70,10 @@ paths:
     post:
       tags: [Auth]
       summary: Login
-      description: Authenticate with username and password. Returns a JWT token.
+      description: |
+        Authenticate with username and password.
+        Returns a JWT token to use on all protected endpoints.
+        No token required.
       security: []
       requestBody:
         required: true
@@ -89,17 +83,17 @@ paths:
               $ref: '#/components/schemas/AuthRequest'
             example:
               username: sarah
-              password: password123
+              password: "********"
       responses:
         '200':
-          description: Login successful
+          description: Login successful — returns JWT token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
               example:
                 token: eyJhbGciOiJIUzI1NiJ9...
-                role: ROLE_USER
+                role: ROLE_ADMIN
                 username: sarah
         '401':
           description: Invalid username or password
@@ -110,13 +104,15 @@ paths:
               example:
                 message: Bad credentials
 
-  # ─── ADMIN ──────────────────────────────────────────────
+  # ─── ADMIN (BearerAuth required) ────────────────────────
 
   /api/admin/destinations:
     get:
       tags: [Admin]
       summary: Get all destinations
-      description: Returns all destinations including pending (not yet approved). Admin only.
+      description: Returns all destinations including pending (not yet approved).
+      security:
+        - BearerAuth: []
       responses:
         '200':
           description: List of all destinations
@@ -126,13 +122,17 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Destination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
     post:
       tags: [Admin]
       summary: Add a single destination
-      description: Manually add one destination to the database. Approved is set to false by default.
+      description: Manually add one destination. Approved defaults to false.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -154,6 +154,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Destination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -161,7 +163,9 @@ paths:
     post:
       tags: [Admin]
       summary: Bulk add destinations
-      description: Add multiple destinations at once. Paste the array returned from the fetch endpoint.
+      description: Add multiple destinations at once. Paste the array from the fetch endpoint.
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -194,6 +198,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Destination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -201,7 +207,9 @@ paths:
     put:
       tags: [Admin]
       summary: Approve a destination
-      description: Sets approved to true so the destination becomes visible to users.
+      description: Sets approved to true — destination becomes visible to users.
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/DestinationId'
       responses:
@@ -211,56 +219,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Destination'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/admin/destinations/{id}:
     delete:
       tags: [Admin]
       summary: Delete a destination
       description: Permanently removes a destination from the database.
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/DestinationId'
       responses:
         '204':
           description: Destination deleted successfully
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/admin/fetch/{region}:
     get:
       tags: [Admin]
-      summary: Fetch destinations from external API
+      summary: Fetch destinations from REST Countries API
       description: |
-        Fetches country data from the REST Countries API (https://restcountries.com) by region.
-        Returns a list of destination objects ready to be bulk-added to the database.
-        **Available regions:** africa, americas, asia, europe, oceania
+        Fetches country data from https://restcountries.com by region.
+        Returns destinations ready to bulk-add — nothing is saved yet.
+        Available regions: africa, americas, asia, europe, oceania
+      security:
+        - BearerAuth: []
       parameters:
         - name: region
           in: path
           required: true
-          description: World region to fetch countries from
+          description: World region to fetch
           schema:
             type: string
             enum: [africa, americas, asia, europe, oceania]
           example: europe
       responses:
         '200':
-          description: List of destinations fetched from external API (not yet saved to DB)
+          description: Fetched destinations (not yet saved to DB)
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Destination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  # ─── USER ───────────────────────────────────────────────
+  # ─── USER (no token required for display, token needed for wishlist identity) ──
 
   /api/user/destinations:
     get:
@@ -272,7 +290,7 @@ paths:
         - $ref: '#/components/parameters/Size'
       responses:
         '200':
-          description: Paginated list of approved destinations
+          description: Paginated approved destinations
           content:
             application/json:
               schema:
@@ -284,12 +302,12 @@ paths:
     get:
       tags: [User]
       summary: Search destinations by name
-      description: Case-insensitive search through approved destinations by name keyword.
+      description: Case-insensitive keyword search through approved destinations.
       parameters:
         - name: keyword
           in: query
           required: true
-          description: Search keyword to match against destination name
+          description: Name keyword to search for
           schema:
             type: string
           example: france
@@ -311,9 +329,9 @@ paths:
       summary: Toggle want to visit
       description: |
         Adds or removes a destination from the logged-in user's wishlist.
-        - If the destination is NOT in the wishlist → it gets added
-        - If the destination IS already in the wishlist → it gets removed
-        Returns the updated list of destination IDs in the wishlist.
+        - Not in wishlist → gets added
+        - Already in wishlist → gets removed
+        Returns updated list of wishlist destination IDs.
       parameters:
         - $ref: '#/components/parameters/DestinationId'
       responses:
@@ -328,19 +346,19 @@ paths:
               example:
                 - 64f1a2b3c4d5e6f7a8b9c0d1
                 - 64f1a2b3c4d5e6f7a8b9c0d2
-        '404':
-          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/user/wishlist:
     get:
       tags: [User]
       summary: Get my wishlist
-      description: Returns the full destination objects for all destinations the logged-in user has marked as Want to Visit.
+      description: Returns full destination details for all destinations the user marked as Want to Visit.
       responses:
         '200':
-          description: List of wishlist destinations with full details
+          description: Wishlist destinations with full details
           content:
             application/json:
               schema:
@@ -359,7 +377,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Enter your JWT token. You can get it from the /api/auth/login endpoint.
+      description: JWT token from POST /api/auth/login. Required for Admin endpoints only.
 
   parameters:
     DestinationId:
@@ -396,7 +414,7 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid JWT token
+      description: Missing or invalid JWT token — login first to get a token
       content:
         application/json:
           schema:
@@ -405,7 +423,7 @@ components:
             message: Unauthorized - please login first
 
     Forbidden:
-      description: Insufficient role permissions
+      description: Valid token but insufficient role — ROLE_ADMIN required
       content:
         application/json:
           schema:
@@ -438,8 +456,10 @@ components:
           example: sarah@test.com
         password:
           type: string
+          format: password
+          writeOnly: true
           minLength: 6
-          example: password123
+          example: "********"
 
     AuthRequest:
       type: object
@@ -450,14 +470,16 @@ components:
           example: sarah
         password:
           type: string
-          example: password123
+          format: password
+          writeOnly: true
+          example: "********"
 
     AuthResponse:
       type: object
       properties:
         token:
           type: string
-          description: JWT token — use this in the Authorization header as Bearer <token>
+          description: JWT token — pass this as Bearer token on protected endpoints
           example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzYXJhaCJ9...
         role:
           type: string
